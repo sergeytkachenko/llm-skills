@@ -2,7 +2,14 @@
 
 Lens: what could this change break? Reason about risk from the diff — do **not** run anything
 here (that's the `regression-check` track).
-Stack: NestJS, Vue 3, Pinia, TypeScript.
+Primary stack: NestJS, Vue 3, Pinia, TypeScript. The framework-specific items below (Nest DI,
+Pinia, TypeORM) are examples of the underlying risks — **apply the same reasoning to whatever
+stack the diff is in.** For a backend/data-pipeline change in another language (a Java indexer,
+a Go service), the highest-value risks are usually items 2–6 below: invariants that must hold
+across a batch (counts that must reconcile, "every item lands in exactly one bucket"),
+retry/idempotency under at-least-once delivery, ordering/shutdown races (does a late write race a
+swap/commit?), and numeric edge cases (overflow to ∞, NaN, clamping). Hold those to the same bar
+as the framework items.
 
 Check, in priority order:
 
@@ -11,6 +18,12 @@ Check, in priority order:
      events. For each, who consumes it and what breaks? Watch optional→required fields, a removed
      or renamed field, and a narrowed type. Event/message payloads: is the shape versioned, or do
      in-flight consumers see the new shape?
+   - **Find the real call sites — don't guess them.** When a public signature, field, type, or
+     default changes, use the built-in `LSP` tool (`findReferences`, `incomingCalls`,
+     `goToDefinition`) to enumerate the *actual* usages across the repo before claiming blast
+     radius. Turn "this might break callers" into "this breaks these N call sites: …", and catch the
+     update site the author missed. Fall back to `ast-grep`/grep only when no language server is
+     available. See `tool-registry.md`.
 
 2. Backward compatibility
    - Breaking changes for other modules, the frontend, or external clients.
@@ -46,6 +59,10 @@ Check, in priority order:
 7. Test coverage of the change
    - Are the modified branches covered by existing tests? Identify changed paths with no coverage
      and the specific case a new test should assert.
+   - Security-shaped risks (injection, secrets, vulnerable deps, auth widening): if the `security`
+     track is also running this review, defer them to it (flag there, not here, to avoid
+     double-reporting). If `security` is **not** selected, do **not** drop them — raise them here so
+     they aren't silently lost; note that a dedicated `security` pass would go deeper.
 
 8. Framework blast radius
    - NestJS: guards, interceptors, pipes, filters, or middleware that affect many routes; a changed

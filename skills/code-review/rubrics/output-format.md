@@ -12,6 +12,11 @@ Applies to every track in this review. Read it before producing any findings.
 - PR scope (detached worktree): `--fix` does **not** edit the worktree — those edits are
   thrown away with it. Stay report-only unless the user said where to apply fixes (PR review
   comments, or a new local branch off the PR head). Never silently edit the detached worktree.
+- `--fix` and security findings: some have no "smallest code edit" — a committed secret needs
+  **rotation** (out-of-band; the pushed value is already compromised, so deleting it from the diff
+  is not a fix), and a dependency CVE needs a version **bump + lockfile regen**. For these, `--fix`
+  reports the required action and (for the CVE) may apply the manifest bump, but does **not**
+  rewrite git history or fabricate a rotation. Say so rather than no-op silently.
 
 ## Severity
 Most severe first:
@@ -31,6 +36,12 @@ Then findings, grouped by severity (Blocker → Nit). Each finding is one short 
 
 If a track finds nothing, say so in one line — do not invent findings to look thorough.
 End each track with a one-line verdict: `<n> blockers, <n> majors, <n> minors, <n> nits — <ready | not ready> to merge`.
+
+When a deterministic analyzer corroborates a finding (the `security` track and tool-backed checks —
+see `tool-registry.md`), cite it in the finding (`Semgrep <rule-id>`, `Gitleaks`, `Trivy CVE-…`,
+`LSP: 3 call sites`) — it marks the finding as tool-confirmed rather than a judgement call. If a
+track relied on analyzers, note in its verdict which ran and which were skipped, so a clean result
+isn't misread as "scanned clean" when a scanner never executed.
 
 ## Consolidated run (all tracks)
 When more than one track runs, output one section per track in the order they ran. If two tracks

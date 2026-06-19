@@ -1,8 +1,20 @@
 # code-review skill
 
 A Claude Code [Skill](https://docs.claude.com/en/docs/claude-code/skills) that runs a structured
-"ST code review" over your working diff (or a given path), across seven independent tracks. Tuned
-for **NestJS + Vue 3 + TypeScript**.
+"ST code review" over your working diff (or a given path), across eight independent tracks. The
+checks are **language-agnostic** — examples lean toward **NestJS + Vue 3 + TypeScript**, but the
+rubrics apply to Java/Spring, Go, Python, Rust, .NET, and others, and the dynamic track detects the
+repo's actual build tool.
+
+It is **LLM + deterministic analyzers**, not LLM-alone: the tool-backed tracks (`security` for
+SAST/secrets/SCA; `regression`/`architecture` for blast radius) gather ground-truth findings from
+open-source tools — **Semgrep** (SAST), **Gitleaks** /
+GitHub secret-scanning (secrets), **Trivy** / **osv-scanner** (dependency CVEs + licenses), and the
+built-in **LSP** find-references (real call sites / blast radius) — then let the model triage them
+(drop false positives, dedupe, explain). The tools catch what reading a diff misses (cross-file
+taint, live secrets, CVE'd deps, who actually calls a changed function); the model makes them
+usable. Tools run **ephemeral-first** (`uvx`/`npx`/`docker`) so no prior install is required, and
+skip gracefully (on the record) when they can't run.
 
 ## Tracks
 
@@ -13,8 +25,9 @@ for **NestJS + Vue 3 + TypeScript**.
 | `naming` | Intention-revealing, honest, domain-language, grammar, casing, cross-codebase consistency. |
 | `comments` | Why-not-what, self-explanatory code first, dead weight, truthfulness, TODO hygiene, public-API docs. |
 | `readability` | Zoom-out integrative pass — cognitive load, consistency, discoverability, coherent narrative. |
-| `regression` | Static risk analysis — changed contracts, backward compat, edge cases, side effects, blast radius. |
-| `regression-check` | Dynamic — runs the project's own typecheck / lint / test / e2e scripts and reports failures. |
+| `regression` | Static risk analysis — changed contracts, backward compat, edge cases, side effects, blast radius (uses LSP find-references for real call sites). |
+| `security` | Injection/taint, secrets, auth, dependency CVEs, crypto, data exposure — LLM reasoning backed by Semgrep / Gitleaks / Trivy ground truth (see [`rubrics/tool-registry.md`](rubrics/tool-registry.md)). |
+| `regression-check` | Dynamic — detects the repo's build tool (npm/pnpm/yarn, Maven, Gradle, Go, Python, .NET), runs its typecheck / lint / test / e2e, verifies any test-count claim, and reports failures. |
 
 The output contract (severity levels, finding format, the report-only vs `--fix` rule) lives in
 [`rubrics/output-format.md`](rubrics/output-format.md) and applies to every track.
@@ -41,6 +54,7 @@ optional `--fix`:
 /code-review naming                                  # just the naming track over the working diff
 /code-review naming,comments                         # two tracks
 /code-review architecture src/auth                   # one track, scoped to a path
+/code-review security                                # SAST + secrets + dep-CVE scan, then triage
 /code-review https://github.com/org/repo/pull/2543   # review a PR in an isolated git worktree
 /code-review naming,comments org/repo#2543           # tracks + a PR reference
 /code-review clean-code --fix                        # apply minimal fixes for each finding
@@ -75,3 +89,54 @@ For a **PR scope**, before the tracks run it first reads the PR conversation —
 all human review comments — so it honours decisions already made and doesn't re-raise resolved
 points, and it checks that the PR title and description accurately describe the diff (flagging a
 missing, vague, or stale one).
+
+It then **verifies the description's factual claims against reality** rather than trusting them:
+
+- "146 tests pass" → runs the suite and reports the real number (a claimed 146 that is really 142
+  is a finding).
+- "see ADR-0027" / references to docs, tickets, sibling files → confirms the artifact actually
+  exists and says what the PR claims (a cited-but-never-committed ADR is flagged).
+- "fixed X" / "removed Y" → greps the code to confirm the change is actually present.
+
+When the description says the PR **pairs with / depends on / must mirror** another PR — especially
+in a different repo (e.g. an index-side change whose normalization must match a query-side rule in
+a sibling repo) — it fetches that paired PR and checks the two sides actually agree, since that
+correctness contract can't be reviewed from one diff alone.
+
+### Large diffs
+
+When the diff is large (more than ~15 files or ~800 changed lines — big enough that a single
+`git diff` can blow past the tool output limit), the skill **fans out**: each track runs in its own
+parallel subagent that reads only the files it needs and returns just its findings, and the
+orchestrator assembles the consolidated verdict. Small diffs run inline.
+
+### Stacks
+
+The static tracks are **language-agnostic**: each rubric leads with a universal principle and
+illustrates it across ecosystems (NestJS/Vue/TS, Java/Spring, Go, Python, Rust, .NET, Rails), so the
+review applies to whatever stack the diff is in — the NestJS/Vue examples are just the most fleshed
+out. The dynamic `regression-check` track **detects the actual build tool from the repo** —
+npm/pnpm/yarn, Maven, Gradle, Go, Python, or .NET — runs that tool's unit set (honouring the pinned
+JDK/runtime), and skips integration/E2E steps that need infra it doesn't have rather than faking them.
+
+### The deterministic layer (open-source analyzers)
+
+Tool-backed tracks do a **gather → triage** pass defined in
+[`rubrics/tool-registry.md`](rubrics/tool-registry.md). Which tools run is driven by the selected
+tracks (so a scoped run doesn't run scanners it won't use):
+
+1. **Gather** (once per review, scoped to the diff): `security` (or an all-tracks run) runs the
+   SAST / secrets / dependency tools — Semgrep (SAST/taint), Gitleaks (secrets in the diff *and*
+   branch history; GitHub secret-scanning as a PR-scope fallback), Trivy/osv-scanner
+   (transitive-dependency CVEs + licenses, only when a manifest changed). `regression` and
+   `architecture` gather blast-radius via the built-in LSP `findReferences` (the real call sites a
+   signature change breaks) — that fires even without `security`. Each tool is tried
+   **ephemeral-first** — already in `PATH`, else `uvx`/`npx`/`docker run` with a short timeout — and
+   **skips gracefully on the record** if it can't run, never fabricating results.
+2. **Triage**: the model takes those structured `path:line` findings *plus the diff*, drops false
+   positives (OSS scanners are noisy), dedupes against what the tracks already raised, maps each
+   survivor to the skill's severity, and explains why it matters here. Raw scanner output never lands
+   in the report; the verdict states which tools ran and which were skipped.
+
+This is the same recipe mature AI reviewers use (run real analyzers → feed findings to the model →
+let it triage), built entirely on free, local, no-account tooling.

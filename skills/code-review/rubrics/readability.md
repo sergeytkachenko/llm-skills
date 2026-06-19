@@ -3,8 +3,8 @@
 Lens: read the change as a whole — how much effort would another engineer spend to understand
 its intent and safely extend it? This is the integrative, zoom-out pass. Do **not** re-list
 micro issues already owned by `naming`, `comments`, `clean-code`, or `architecture`; a single
-bad name, comment, or function is theirs. You judge how the pieces add up. Stack: NestJS,
-Vue 3 + Pinia, TypeScript.
+bad name, comment, or function is theirs. You judge how the pieces add up. Checks are
+language-agnostic; examples lean toward NestJS/Vue/TS.
 
 Check, in priority order:
 
@@ -21,9 +21,11 @@ Check, in priority order:
      context and where it should be made visible.
 
 3. Control-flow legibility across the feature
-   - Trace the feature's path end to end (request → service → store → component, or handler →
-     event). Flag flow that fragments across too many hops to follow, logic that ping-pongs
-     between layers/files, and a happy path obscured by branching scattered across the diff.
+   - Trace the feature's path end to end (request → service → store → component in a Nest/Vue
+     app; controller → service → repository in Spring; handler → usecase → store in Go;
+     view → model in Rails). Flag flow that fragments across too many hops to follow, logic
+     that ping-pongs between layers/files, and a happy path obscured by branching scattered
+     across the diff.
 
 4. Consistency with neighbors
    - Does this match the patterns of the files it sits beside, or introduce a second way to do
@@ -32,13 +34,15 @@ Check, in priority order:
 
 5. Abstraction-level mixing
    - Within a unit, do statements sit at one level, or is high-level orchestration interleaved
-     with low-level detail (raw SQL/`fetch` beside business steps, DOM/formatting beside domain
-     logic)? Flag the jarring level switches that force re-reading.
+     with low-level detail (raw SQL/`fetch` beside business steps; low-level byte/buffer
+     manipulation beside domain logic; ORM/driver calls interleaved with use-case orchestration;
+     DOM/formatting beside domain logic)? Flag the jarring level switches that force re-reading.
 
 6. Discoverability — would a newcomer find it where they'd look?
    - Related things live together; each file has one concern. Would someone predict this file
      for this behavior? Flag surprising locations, logic stranded far from its siblings, and
-     grab-bag files. Vue: clear component responsibility. NestJS: discoverable module structure.
+     grab-bag files. Does the project's structure make this predictable? (a Nest module, a Spring
+     package, a Go `internal/` package, a Rails `app/` folder).
 
 7. Onboarding test
    - Would understanding this need a verbal walkthrough? If yes, name exactly what is opaque and

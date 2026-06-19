@@ -1,15 +1,15 @@
 # Track: naming
 
 Lens: does every name reveal intent and match what the thing actually does?
-Stack: NestJS, Vue 3, TypeScript.
+Checks are language-agnostic; examples lean toward NestJS/Vue/TypeScript.
 
 Check, in priority order:
 
 1. Honesty
    - The name must match the behavior. Flag misleading names (a `get*` that mutates, an
      `isValid` that throws, a `fetchUser` returning cached data) and stale names left after a
-     change. `async`/Promise-returning functions read as the action (`loadUser`, `saveOrder`),
-     never as the resolved value.
+     change. Names for deferred work read as the action (`loadUser`, `saveOrder`), never as the
+     resolved value — applies to any async/Promise/Future/coroutine return.
 
 2. Intention-revealing
    - A name answers why it exists and how it's used. Flag single letters (except trivial loop
@@ -28,14 +28,18 @@ Check, in priority order:
      Flag singular/plural mismatches and singular names holding many.
 
 5. Conventions & casing
-   - camelCase for variables/functions, PascalCase for classes/types/Vue components,
-     UPPER_SNAKE for constants. Type-param names are meaningful or the conventional `T`/`K`/`V` —
-     flag noise like `T1`, `Type`. Avoid type-vs-value name collisions for distinct concepts.
-   - NestJS: consistent provider suffixes (`*Service`, `*Repository`, `*Controller`), DTO/Entity/
-     Schema suffixes (`CreateUserDto`, `UserEntity`), files as `*.module/service/controller.ts`,
-     descriptive injection tokens (`USER_REPOSITORY`).
-   - Vue: composables named `useX`; components multi-word PascalCase; `props`/`emits` camelCase;
-     events past-tense or `update:modelValue` for `v-model`; template refs named `xRef`.
+   - Follow the language's and project's established casing conventions consistently (in TS/JS:
+     camelCase vars, PascalCase types; in Python: snake_case functions, PascalCase classes,
+     UPPER_SNAKE constants; in Go: exported PascalCase / unexported camelCase, short receiver
+     names; in Rust: snake_case fns, CamelCase types). Type params are meaningful or conventional —
+     flag noise like `T1`, `Type` (in TS, the conventional `T`/`K`/`V` are fine). Avoid
+     type-vs-value name collisions for distinct concepts.
+   - Follow the framework's naming conventions where one applies (NestJS provider/DTO suffixes
+     `*Service`/`*Repository`/`*Controller`/`CreateUserDto`/`UserEntity` and descriptive injection
+     tokens like `USER_REPOSITORY`; Vue composables `useX`, multi-word PascalCase components,
+     camelCase `props`/`emits`, past-tense events or `update:modelValue` for `v-model`; Spring
+     `*ServiceImpl`, Rails model/controller conventions, Go package-qualified names). Flag breaks
+     from whatever convention the project has adopted.
 
 6. Consistency & file agreement
    - The same concept has the same name everywhere. Flag two names for one idea (and one name

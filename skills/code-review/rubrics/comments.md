@@ -2,7 +2,7 @@
 
 Lens: do comments earn their place by explaining what the code cannot say itself — and do they
 do it in as few words as possible, in the right place, in the right form?
-Stack: NestJS, Vue 3, TypeScript.
+Checks are language-agnostic; examples lean toward NestJS/Vue/TypeScript.
 
 Check, in priority order:
 
@@ -25,15 +25,23 @@ Check, in priority order:
 
 4. Right place: declaration doc vs in-body
    - An explanation of what a method/function/class does, its parameters, return, or contract
-     belongs in a **doc comment on the declaration** (above the signature), not as loose `//`
-     lines inside the body. Flag in-method comments that are really API documentation and say
-     "move to the declaration".
+     belongs in a **doc comment on the declaration** (above the signature), not as loose
+     inline comments inside the body. This holds in any language. Flag in-body comments that are
+     really API documentation and say "move to the declaration".
    - In-body comments should be short, line-specific notes about a single non-obvious step.
 
 5. Right form: IDE-visible doc comments
-   - Docs a reader wants on hover must use TSDoc/JSDoc `/** … */`; a plain `//` block never
-     reaches tooltips or IntelliSense. Flag `//` used where `/** */` is required. Flag HTML tags
-     inside comments — noise that doesn't render where it matters.
+   - Docs a reader wants on hover must use the language's **doc-comment form**, not a plain
+     inline comment. A plain `//` (or any non-doc comment) never reaches tooltips, IntelliSense,
+     or generated docs. Use the form the tooling recognizes:
+     - TypeScript/JavaScript — TSDoc/JSDoc `/** … */`
+     - Java/Kotlin — Javadoc/KDoc `/** … */`
+     - Python — docstrings `"""…"""` (first statement in the module/class/function)
+     - Go — doc comments: a `// Name …` comment directly above the declaration
+     - Rust — `///` (item docs) / `//!` (module docs)
+     - C# — XML-doc `///`
+   - Flag a non-doc comment used where the doc form is required. Flag HTML tags inside comments
+     when they're noise that doesn't render where it matters.
 
 6. Self-explanatory code first
    - If a comment is patching unclear code, the fix is usually a better name or an extracted
@@ -45,23 +53,31 @@ Check, in priority order:
 
 8. Truthfulness
    - A comment that contradicts the current code is worse than none. Flag stale comments that no
-     longer match behavior — especially after the change under review. Tags must be accurate:
-     flag `@deprecated`/`@throws`/`@param`/`@returns` that name the wrong thing or describe
-     behavior the code no longer has.
+     longer match behavior — especially after the change under review. Doc tags must be accurate:
+     flag deprecation/throws/param/return tags (e.g. `@deprecated`/`@throws`/`@param`/`@returns`,
+     or their docstring/XML-doc equivalents) that name the wrong thing or describe behavior the
+     code no longer has.
 
 9. TODO / FIXME hygiene
    - Each should carry context and ideally an owner or ticket. Flag orphaned TODOs with no
      explanation.
 
 10. Public API documentation
-    - TSDoc/JSDoc on exported functions, services, and DTOs where it adds value: document
-      non-obvious parameters, thrown errors, and side effects. Don't document the obvious — a
-      `@param`/`@returns` or inline type note that just restates what the types and signature
-      already say is noise. Flag it.
+    - Doc comments on exported/public surfaces — exported functions, public classes and services,
+      DTOs/structs — where they add value: document non-obvious parameters, thrown errors, and
+      side effects. The doc-comment form is the language's own (TSDoc, Javadoc/KDoc, Python
+      docstrings, Go doc comments, Rust `///`, C# XML-doc). Don't document the obvious — a param/
+      return note that just restates what the types and signature already say is noise. Flag it.
 
 11. Suppressions
-    - `eslint-disable`, `@ts-ignore`/`@ts-expect-error`, and similar suppressions must state why.
-      Flag bare ones; the comment should justify the escape hatch, not just silence the tool.
+    - Any tool or compiler suppression must state why. The comment should justify the escape
+      hatch, not just silence the tool. Flag bare ones, in whatever the stack uses:
+     - TS/JS — `eslint-disable`, `@ts-ignore`/`@ts-expect-error`
+     - Java — `@SuppressWarnings`
+     - Python — `# noqa`, `# type: ignore`
+     - Go — `//nolint`
+     - Rust — `#[allow(...)]`
+     - C# — `#pragma warning disable`
 
 Report per the output contract. The default bias is **delete**: when a comment isn't clearly
 earning its place, the recommendation is to remove it, not to reword it.

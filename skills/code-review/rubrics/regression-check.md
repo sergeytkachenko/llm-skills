@@ -2,18 +2,37 @@
 
 Lens: does the project's own tooling pass on this change? This track executes commands; the
 others don't.
-Stack: NestJS, Vue 3, TypeScript.
+Primary stack: NestJS, Vue 3, TypeScript — but **detect the actual stack from the repo, don't
+assume it.** The discovery rules below are stack-agnostic; step 1 maps the build tool to its
+commands.
 
 Procedure:
 
-1. Discover the real scripts
-   - Read the root `package.json` and use its actual `scripts`. Do not assume script names.
-   - Detect a workspace/monorepo: a `workspaces` field, `pnpm-workspace.yaml`, or a tool
-     like Nx/Turborepo. If present, expect a separate backend (Nest) and frontend (Vue)
-     package, each with its own `scripts`. Read each touched package's `package.json` too.
-   - Use the repo's package manager (lockfile decides: `pnpm-lock.yaml` → pnpm,
-     `yarn.lock` → yarn, else npm). Match its workspace flags (`pnpm -F <pkg>`,
-     `yarn workspace <pkg>`, `npm -w <pkg>`).
+1. Discover the build tool and the real commands — from the repo, never from memory
+   - **Identify the stack from the files present, then use that tool's runner:**
+     - `package.json` → Node. Read its `scripts`; pick the package manager from the lockfile
+       (`pnpm-lock.yaml` → pnpm, `yarn.lock` → yarn, else npm). In a workspace, scripts often live
+       in the **sub-packages**, not the root — read each touched package's own `package.json` too,
+       or you'll wrongly conclude "no test script" and skip the suite.
+     - `pom.xml` → Maven (`mvn test`, `mvn -q verify`); `build.gradle(.kts)` → Gradle
+       (`./gradlew test`). Check the POM/build file for a test-tag/profile split (e.g. a
+       JUnit `@Tag("unit")` set wired via Surefire `<groups>`, or a `run-all-tests` profile)
+       and run the unit set the PR claims, not the heavyweight integration/E2E set.
+     - `go.mod` → `go test ./...`; `Cargo.toml` → `cargo test`; `pyproject.toml`/`setup.cfg` →
+       `pytest` (or the configured runner); `*.csproj`/`*.sln` → `dotnet test`.
+     - Mixed repo → run the tool for each touched language.
+   - **Honour the right JDK / runtime / toolchain.** If the build pins a version (POM
+     `maven.compiler.target`, `.tool-versions`, `.nvmrc`, `go` directive), use it. If you can't
+     match it, say so and report the version you actually ran on — a green run on the wrong
+     toolchain is not the claim being verified.
+   - **Cross-check the PR's own test claim.** If the description cites a count or "all pass",
+     run the same set it names and compare. A real 142 against a claimed 146 is a finding
+     (Major) for the claim-verification step in `SKILL.md`, not just a passing run.
+   - Detect a workspace/monorepo (Node `workspaces`/`pnpm-workspace.yaml`/Nx/Turborepo; Maven
+     reactor; Gradle multi-project) and scope per module (step 2). Invoke a single package's scripts
+     with the manager's workspace flag — `pnpm -F <pkg> <script>`, `yarn workspace <pkg> <script>`,
+     `npm -w <pkg> run <script>` (Maven `-pl <module>`, Gradle `:<module>:<task>`) — don't run the
+     whole monorepo when one package changed.
 
 2. Scope the run to what changed
    - Map the diff's files to their owning package(s). Run the suite only for those packages —
@@ -22,11 +41,19 @@ Procedure:
    - If the repo exposes an affected/changed filter (Nx `affected`, Turborepo `--filter`),
      use it to scope further.
 
-3. Run, per affected package, in this order whichever exist (via the shell):
-   - type check (e.g. `tsc --noEmit` or the package's `typecheck` script)
-   - lint (e.g. its `lint` script)
-   - unit tests (e.g. its `test` script)
-   - e2e tests if present (e.g. its `test:e2e` script)
+3. Run, per affected package/module, in this order whichever exist (via the shell):
+   - compile / type check (Node `tsc --noEmit` or a `typecheck` script; Maven/Gradle compile;
+     `go build`; `cargo check`; `dotnet build`)
+   - lint / static analysis if the repo configures one (a `lint` script, `golangci-lint`,
+     `ruff`, etc.). This track **owns** the native type/compiler-aware linter (per
+     `tool-registry.md`) — the gather stage does not run it, so there's no double run; other tracks
+     read your output if they need it.
+   - unit tests (the fast, isolated set — Node `test` script; `mvn test` unit-tag set;
+     `go test ./...`; `pytest`)
+   - integration / e2e tests if present **and runnable** (Node `test:e2e`; a Maven
+     `run-all-tests`/integration profile; anything behind Testcontainers/a live service). If a
+     step needs infra you don't have (a database, Elasticsearch, Docker), don't fake it — note
+     it as not run and why, and run the rest.
    - For a long suite, prefer scoping to the changed package/test files over running
      everything; say what you scoped to and what you skipped.
 
