@@ -13,8 +13,9 @@ GitHub secret-scanning (secrets), **Trivy** / **osv-scanner** (dependency CVEs +
 built-in **LSP** find-references (real call sites / blast radius) — then let the model triage them
 (drop false positives, dedupe, explain). The tools catch what reading a diff misses (cross-file
 taint, live secrets, CVE'd deps, who actually calls a changed function); the model makes them
-usable. Tools run **ephemeral-first** (`uvx`/`npx`/`docker`) so no prior install is required, and
-skip gracefully (on the record) when they can't run.
+usable. The analyzers run as a **pinned Docker Compose toolchain the skill ships** (`tools/compose.yml`),
+so the gather stage is reproducible and versioned; if Docker isn't available the layer skips
+gracefully on the record, never fabricating results.
 
 ## Tracks
 
@@ -34,15 +35,17 @@ The output contract (severity levels, finding format, the report-only vs `--fix`
 
 ## Install
 
-Skills load from `~/.claude/skills/<name>/`. Symlink this skill in so `git pull` in the
-[`llm-skills`](../../README.md) repo keeps the live skill up to date:
+This skill ships inside the `st` plugin in the [`llm-skills`](../../../../README.md) marketplace.
+Add the marketplace and install the plugin (inside Claude Code):
 
-```sh
-git clone https://github.com/sergeytkachenko/llm-skills.git ~/projects/llm-skills
-ln -s ~/projects/llm-skills/skills/code-review ~/.claude/skills/code-review
+```
+/plugin marketplace add ~/projects/llm-skills
+/plugin install st@st
 ```
 
-(Or copy the directory into `~/.claude/skills/code-review` instead of symlinking.)
+It then invokes as `/st:code-review`. `git pull` in the cloned repo plus `/plugin marketplace update
+st` keeps it current. The deterministic analyzer layer needs Docker (it runs the pinned toolchain in
+[`tools/compose.yml`](tools/compose.yml)); without Docker the skill still runs, minus that layer.
 
 ## Usage
 
@@ -130,9 +133,11 @@ tracks (so a scoped run doesn't run scanners it won't use):
    branch history; GitHub secret-scanning as a PR-scope fallback), Trivy/osv-scanner
    (transitive-dependency CVEs + licenses, only when a manifest changed). `regression` and
    `architecture` gather blast-radius via the built-in LSP `findReferences` (the real call sites a
-   signature change breaks) — that fires even without `security`. Each tool is tried
-   **ephemeral-first** — already in `PATH`, else `uvx`/`npx`/`docker run` with a short timeout — and
-   **skips gracefully on the record** if it can't run, never fabricating results.
+   signature change breaks) — that fires even without `security`. The analyzers run as a **pinned
+   Docker Compose toolchain the skill ships** ([`tools/compose.yml`](tools/compose.yml)) — not from
+   the host PATH — so the gather stage is reproducible and versioned. If Docker/Compose isn't
+   available the whole deterministic layer **skips gracefully on the record**, never fabricating
+   results (LSP/Grep, being built-in session tools, still run).
 2. **Triage**: the model takes those structured `path:line` findings *plus the diff*, drops false
    positives (OSS scanners are noisy), dedupes against what the tracks already raised, maps each
    survivor to the skill's severity, and explains why it matters here. Raw scanner output never lands

@@ -4,7 +4,10 @@ Date: 2026-06-19
 
 ## Status
 
-Accepted
+Accepted. The execution strategy ("ephemeral-first → graceful-skip") is superseded by
+[ADR-0002](0002-docker-compose-toolchain-for-the-analyzer-layer.md), which runs the analyzers via a
+pinned Docker Compose toolchain instead. The tool selection and the gather→triage contract below
+still stand.
 
 ## Context
 

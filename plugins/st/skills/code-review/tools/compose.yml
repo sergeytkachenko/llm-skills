@@ -1,0 +1,69 @@
+# Deterministic analyzer toolchain for the code-review skill.
+#
+# The skill brings its OWN tools — every analyzer runs as a pinned container here,
+# never from the host PATH. This makes the gather stage reproducible and versioned:
+# the same image tags produce the same findings on any machine with Docker.
+#
+# Mounts (see rubrics/tool-registry.md for the full invocation):
+#   - REVIEW_DIR  → /src  read-only   (the code under review; never written to)
+#   - OUTPUT_DIR  → /out  writable     (where each tool writes its report)
+#   - GIT_COMMON_DIR → /gitcommon ro   (the real object store; only needed for a
+#                                       linked worktree, where /src/.git is a
+#                                       pointer file and history lives elsewhere)
+# Reports go to /out (NOT into the read-only /src), so the skill reads them back
+# from OUTPUT_DIR. Command examples live in rubrics/tool-registry.md — the single
+# source of truth — not duplicated here.
+#
+# Pin tags to a known-good version; bump deliberately (a bump can change findings).
+# renovate: each `image:` below is a docker datasource Renovate can track.
+
+# Every service shares the same two mounts (Compose can't merge list values via a
+# YAML anchor, so they're written out per service): REVIEW_DIR→/src read-only (code
+# under review, never written), OUTPUT_DIR→/out writable (reports land here). Tools
+# that warm a DB/cache add their own named cache volume.
+
+services:
+  semgrep:
+    image: semgrep/semgrep:1.97.0
+    working_dir: /src
+    volumes:
+      - "${REVIEW_DIR:-.}:/src:ro"
+      - "${OUTPUT_DIR:-./.review}:/out"
+      - "semgrep-cache:/root/.semgrep"   # rule packs cached across runs
+    network_mode: bridge                 # registry rule packs fetch on first run
+
+  gitleaks:
+    image: ghcr.io/gitleaks/gitleaks:v8.21.2
+    working_dir: /src
+    # For a LINKED worktree, /src/.git is a pointer file; the object store lives in
+    # the parent repo. Mount it read-only at /gitcommon and point gitleaks at it via
+    # GIT_DIR. For a normal repo GIT_COMMON_DIR == REVIEW_DIR/.git — a harmless
+    # re-mount. See tool-registry.md "Secrets" for the exact invocation.
+    volumes:
+      - "${REVIEW_DIR:-.}:/src:ro"
+      - "${OUTPUT_DIR:-./.review}:/out"
+      - "${GIT_COMMON_DIR:-./.git}:/gitcommon:ro"
+    network_mode: none                   # fully offline; regex + entropy only
+
+  trivy:
+    image: aquasec/trivy:0.58.0
+    working_dir: /src
+    volumes:
+      - "${REVIEW_DIR:-.}:/src:ro"
+      - "${OUTPUT_DIR:-./.review}:/out"
+      - "trivy-cache:/root/.cache/trivy"
+    network_mode: bridge                 # vuln DB pulls on first run; cached in volume
+
+  osv-scanner:
+    image: ghcr.io/google/osv-scanner:v1.9.2
+    working_dir: /src
+    volumes:
+      - "${REVIEW_DIR:-.}:/src:ro"
+      - "${OUTPUT_DIR:-./.review}:/out"
+      - "osv-cache:/root/.cache/osv-scanner"
+    network_mode: bridge                 # offline DB download on first run; cached in volume
+
+volumes:
+  semgrep-cache:
+  trivy-cache:
+  osv-cache:

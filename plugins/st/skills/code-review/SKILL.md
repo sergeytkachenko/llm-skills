@@ -1,7 +1,7 @@
 ---
 name: code-review
 description: Use this skill when the user asks to "code review", "/code-review", "review my changes", "review this diff/PR", "code review <path>", or "code review <pull-request-url>". Reviews the working diff, a given path, or a pull request (checked out into an isolated git worktree) across eight tracks — architecture, clean-code, naming, comments, readability, regression (static risk), security (taint/secrets/SCA backed by OSS analyzers), and regression-check (runs the test/lint/typecheck suite). Runs deterministic open-source analyzers (Semgrep, Gitleaks, Trivy, LSP find-references) and feeds their findings into the LLM to triage — catching what reading a diff misses. For a PR it also verifies the description's factual claims against reality (real test counts, cited ADRs/docs exist, "fixed X" is actually in the code) and follows paired/dependency PRs when a correctness contract spans repos. Fans out to parallel subagents for large diffs. Accepts mode(s) to scope which tracks run, an optional path, an optional PR URL, and `--fix` to apply minimal fixes. Checks are language-agnostic (examples lean toward NestJS + Vue 3 + TypeScript, but the rubrics apply to Java/Spring, Go, Python, Rust, .NET, etc.); the dynamic track detects the actual stack (Maven/Java, Gradle, Go, Python, .NET).
-version: 0.3.0
+version: 0.4.0
 ---
 
 # Code review
@@ -148,14 +148,19 @@ verdict per the output contract.
 ### Gather the deterministic findings once
 
 Before reasoning, run the **gather** stage defined in `rubrics/tool-registry.md` — **once** for the
-whole review. That file is the source of truth for *how* each tool runs (ephemeral-first →
-graceful-skip, diff-scoping, SARIF/JSON parsing); don't restate the mechanics here. What this step
+whole review. The analyzers run as a **pinned Docker Compose toolchain the skill ships**
+(`tools/compose.yml`) — not from the host PATH; that file is the source of truth for *how* each tool
+runs (the `docker compose run` invocation, the writable `/out` mount, report parsing, per-service
+skip, cleanup), so don't restate the mechanics here. Preflight `docker compose version` once; if
+Docker is unavailable, skip the whole deterministic layer **on the record** — but if Docker is up
+and one *service* fails (image pull, blocked fetch, timeout), skip just that tool on the record and
+keep the rest (the tracks still reason, just without that tool's corroboration). What this step
 decides is *which* tools to gather, driven by the **selected tracks** — gather only what a selected
 track will consume, so a scoped run isn't forced to run scanners it won't use:
 
-- `security` selected (or all tracks) → run the SAST / secrets / dependency tools (Semgrep,
-  Gitleaks or the PR-scope `run_secret_scanning` fallback, Trivy/osv-scanner when a manifest
-  changed).
+- `security` selected (or all tracks) → run the SAST / secrets / dependency services (Semgrep,
+  Gitleaks — or the PR-scope `run_secret_scanning` fallback when Docker is unavailable —
+  Trivy/osv-scanner when a manifest changed).
 - `regression` **or** `architecture` selected (or all tracks) → gather blast-radius via the built-in
   `LSP` `findReferences` on changed symbols. This fires even when `security` is *not* selected — the
   LSP gather is owned by these tracks, not by `security`.
