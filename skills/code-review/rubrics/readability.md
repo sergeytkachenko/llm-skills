@@ -1,34 +1,47 @@
 # Track: readability
 
-Lens: how much effort would another engineer spend to understand and safely change this?
-This is the integrative, zoom-out pass. Do **not** re-list micro issues already owned by
-`naming`, `comments`, or `clean-code` — focus on coherence, consistency, and onboarding cost.
-Stack: NestJS, Vue 3, TypeScript.
+Lens: read the change as a whole — how much effort would another engineer spend to understand
+its intent and safely extend it? This is the integrative, zoom-out pass. Do **not** re-list
+micro issues already owned by `naming`, `comments`, `clean-code`, or `architecture`; a single
+bad name, comment, or function is theirs. You judge how the pieces add up. Stack: NestJS,
+Vue 3 + Pinia, TypeScript.
 
 Check, in priority order:
 
-1. Cognitive load
-   - Can a reader follow the flow top-to-bottom without jumping across many files to hold the
-     logic in their head? Flag logic that only makes sense with hidden context.
+1. Diff coherence — one intent or several?
+   - Does the change read as one focused intent, or are unrelated edits (a fix, a refactor, a
+     rename sweep, a new feature) smashed into one diff? Flag mixed intents that should be
+     separate commits/PRs, and incidental churn (reformatting, reordering, moves) that buries
+     the real change. Name what to split out.
 
-2. Consistency with the codebase
-   - Does this follow the patterns already used here, or introduce a new style for the same
-     problem? Flag one-off conventions that fragment the codebase.
+2. Reading order & hidden context
+   - Can a reviewer follow the change top-to-bottom without holding offscreen state in their
+     head? Flag logic whose correctness depends on an unstated invariant, a side effect set
+     elsewhere, call-order coupling, or magic established in another file. Name the missing
+     context and where it should be made visible.
 
-3. Organization & discoverability
-   - Related things live together; files have one clear concern and a reasonable length. Could
-     someone predict where a given behavior is implemented? Flag surprising locations.
+3. Control-flow legibility across the feature
+   - Trace the feature's path end to end (request → service → store → component, or handler →
+     event). Flag flow that fragments across too many hops to follow, logic that ping-pongs
+     between layers/files, and a happy path obscured by branching scattered across the diff.
 
-4. Coherent narrative
-   - Names, structure, and the few necessary comments should tell one consistent story. Flag
-     places where they pull in different directions.
+4. Consistency with neighbors
+   - Does this match the patterns of the files it sits beside, or introduce a second way to do
+     the same thing (error shape, DTO/return shape, store access, async style, file layout)?
+     Flag one-off conventions that fragment the codebase. Point to the neighbor it diverges from.
 
-5. Public-surface ergonomics
-   - Consistent return shapes and predictable error surfaces for callers. Vue: clear component
-     responsibility, documented props/emits. NestJS: discoverable module structure.
+5. Abstraction-level mixing
+   - Within a unit, do statements sit at one level, or is high-level orchestration interleaved
+     with low-level detail (raw SQL/`fetch` beside business steps, DOM/formatting beside domain
+     logic)? Flag the jarring level switches that force re-reading.
 
-6. Onboarding test
-   - Would this need a verbal walkthrough to be understood? If yes, name what specifically is
-     opaque and the smallest change that would remove the need.
+6. Discoverability — would a newcomer find it where they'd look?
+   - Related things live together; each file has one concern. Would someone predict this file
+     for this behavior? Flag surprising locations, logic stranded far from its siblings, and
+     grab-bag files. Vue: clear component responsibility. NestJS: discoverable module structure.
+
+7. Onboarding test
+   - Would understanding this need a verbal walkthrough? If yes, name exactly what is opaque and
+     the smallest structural change (split, reorder, relocate) that removes the need.
 
 Report per the output contract.

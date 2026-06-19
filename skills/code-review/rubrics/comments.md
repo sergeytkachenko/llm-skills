@@ -11,13 +11,10 @@ Check, in priority order:
      merely restate what the code already says.
 
 2. Verbosity & volume
-   - Comments must be terse. Flag multi-line/paragraph comments where one line carries the same
-     "why"; cut narrative to the single non-obvious fact. A reader skims code, not prose.
-   - Flag any block where the comments outweigh the code they annotate (roughly: more comment
-     lines than code lines in a method, or a wall of `//` before a short body). Note the ratio
-     and what to delete.
+   - Comments must be terse. Cut multi-line/paragraph comments to the single non-obvious fact;
+     flag any block where comment lines outweigh the code they annotate. Note what to delete.
    - AI-generated explanation prose is the usual offender: it over-explains the obvious and
-     re-narrates the diff. Strip it down to the one line a human couldn't infer from the code.
+     re-narrates the diff. Strip it to the one line a human couldn't infer from the code.
 
 3. No narrative / history / cross-references
    - Comments are not a changelog or decision log. Flag and recommend deleting: internal
@@ -34,11 +31,9 @@ Check, in priority order:
    - In-body comments should be short, line-specific notes about a single non-obvious step.
 
 5. Right form: IDE-visible doc comments
-   - Documentation a reader will want on hover must use the doc-comment form the IDE surfaces:
-     TSDoc/JSDoc `/** … */` in TypeScript (not a plain `//` block, which IDEs don't show as a
-     tooltip). Flag `//` used where `/** */` is required for the comment to reach tooltips and
-     IntelliSense. Flag HTML tags inside comments — they add noise and don't render where it
-     matters.
+   - Docs a reader wants on hover must use TSDoc/JSDoc `/** … */`; a plain `//` block never
+     reaches tooltips or IntelliSense. Flag `//` used where `/** */` is required. Flag HTML tags
+     inside comments — noise that doesn't render where it matters.
 
 6. Self-explanatory code first
    - If a comment is patching unclear code, the fix is usually a better name or an extracted
@@ -49,8 +44,10 @@ Check, in priority order:
      comments that only restate a section name, and auto-generated boilerplate comments.
 
 8. Truthfulness
-   - A comment that contradicts the current code is worse than none. Flag stale comments that
-     no longer match behavior — especially after the change under review.
+   - A comment that contradicts the current code is worse than none. Flag stale comments that no
+     longer match behavior — especially after the change under review. Tags must be accurate:
+     flag `@deprecated`/`@throws`/`@param`/`@returns` that name the wrong thing or describe
+     behavior the code no longer has.
 
 9. TODO / FIXME hygiene
    - Each should carry context and ideally an owner or ticket. Flag orphaned TODOs with no
@@ -59,7 +56,12 @@ Check, in priority order:
 10. Public API documentation
     - TSDoc/JSDoc on exported functions, services, and DTOs where it adds value: document
       non-obvious parameters, thrown errors, and side effects. Don't document the obvious — a
-      doc comment that just repeats the signature is noise, not documentation.
+      `@param`/`@returns` or inline type note that just restates what the types and signature
+      already say is noise. Flag it.
+
+11. Suppressions
+    - `eslint-disable`, `@ts-ignore`/`@ts-expect-error`, and similar suppressions must state why.
+      Flag bare ones; the comment should justify the escape hatch, not just silence the tool.
 
 Report per the output contract. The default bias is **delete**: when a comment isn't clearly
 earning its place, the recommendation is to remove it, not to reword it.
