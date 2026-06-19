@@ -59,13 +59,24 @@ working tree — review it in a throwaway worktree so the user's checkout is unt
    git diff --stat "origin/$BASE...HEAD"
    ```
 
-   Also pull the PR title/body and any existing review comments for context
-   (`gh pr view <n> --repo <owner>/<repo>`, `gh pr diff <n>`). The SCOPE for every track is this
-   PR diff (read the touched files in the worktree for surrounding context as needed).
-5. **Cleanup is mandatory.** After the review finishes (or if you abort), remove the worktree:
+   The SCOPE for every track is this PR diff (read the touched files in the worktree for
+   surrounding context as needed). Steps 5–6 gather the PR's conversation and metadata.
+5. **Read the PR conversation before reviewing the code.** Pull every human comment — the PR
+   description, review threads, and inline comments
+   (`gh pr view <n> --repo <owner>/<repo> --comments`, `gh api repos/<owner>/<repo>/pulls/<n>/comments`).
+   They carry context the diff cannot: the author's intent, constraints already agreed, decisions
+   made in discussion, and known follow-ups. Honour them — do not re-raise a point a human already
+   resolved, and treat an open reviewer concern as a finding to confirm, not rediscover.
+6. **Check the PR title and description match the change.** Before the tracks run, verify the
+   title is a clear, accurate summary of the diff and the description explains *why* and covers
+   what actually changed. Flag (as a Major) a title/description that is missing, vague, stale
+   (describes something the diff no longer does), or omits a user-visible/breaking change present
+   in the code. Suggest a corrected title/description. With `--fix` and a PR scope, propose the
+   edit for the user to apply — do not silently rewrite the PR.
+7. **Cleanup is mandatory.** After the review finishes (or if you abort), remove the worktree:
    `git worktree remove --force "$WT"` (and `rm -rf <tmp clone>` if you cloned). Do this even on
    failure. Tell the user the worktree path while it exists, in case they want to inspect it.
-6. `--fix` with a PR scope: by default still **report only** — a worktree is detached and throwaway,
+8. `--fix` with a PR scope: by default still **report only** — a worktree is detached and throwaway,
    so fixes there would be lost. If the user explicitly wants fixes applied, confirm where: post
    them as PR review comments (`gh pr comment` / inline review), or apply on a new local branch
    tracking the PR head — do not silently edit the detached worktree.

@@ -70,3 +70,8 @@ an isolated `git worktree`, reviewed against its merge base, then cleaned up), a
 local working diff (`git status --short` + `git diff HEAD`) — loads `rubrics/output-format.md` plus
 the rubric for each selected mode, then runs the tracks in canonical order and emits a consolidated
 verdict.
+
+For a **PR scope**, before the tracks run it first reads the PR conversation — the description and
+all human review comments — so it honours decisions already made and doesn't re-raise resolved
+points, and it checks that the PR title and description accurately describe the diff (flagging a
+missing, vague, or stale one).
