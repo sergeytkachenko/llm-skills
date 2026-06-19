@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-The `code-review` skill (`plugins/code-review/skills/code-review/`) originally reviewed a diff by LLM reasoning alone —
+The `code-review` skill (`plugins/st/skills/code-review/`) originally reviewed a diff by LLM reasoning alone —
 the model read the diff and the surrounding files and produced findings against a set of rubric
 tracks. That "LLM-over-diff" approach has a structural ceiling: a model reading a diff cannot
 reliably see facts that live outside the hunk or outside its training. Specifically it misses

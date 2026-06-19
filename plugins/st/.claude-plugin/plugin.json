@@ -1,5 +1,5 @@
 {
-  "name": "code-review",
+  "name": "st",
   "description": "Structured code review across eight tracks with a deterministic open-source analyzer layer (Semgrep, Gitleaks, Trivy, LSP find-references).",
   "version": "0.3.0",
   "author": {
