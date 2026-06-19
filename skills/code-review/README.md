@@ -33,28 +33,40 @@ ln -s ~/projects/llm-skills/skills/code-review ~/.claude/skills/code-review
 
 ## Usage
 
-Invoke `/code-review` with optional mode(s), an optional path, and an optional `--fix`:
+Invoke `/code-review` with optional mode(s), an optional scope (path **or** PR URL), and an
+optional `--fix`:
 
 ```
-/code-review                       # all tracks over the working diff (runs the test suite)
-/code-review naming                # just the naming track over the working diff
-/code-review naming,comments       # two tracks
-/code-review architecture src/auth # one track, scoped to a path
-/code-review clean-code --fix      # apply minimal fixes for each finding
+/code-review                                         # all tracks over the working diff (runs the test suite)
+/code-review naming                                  # just the naming track over the working diff
+/code-review naming,comments                         # two tracks
+/code-review architecture src/auth                   # one track, scoped to a path
+/code-review https://github.com/org/repo/pull/2543   # review a PR in an isolated git worktree
+/code-review naming,comments org/repo#2543           # tracks + a PR reference
+/code-review clean-code --fix                        # apply minimal fixes for each finding
 ```
 
 Argument rules:
 
 - **Modes** — comma-separated; omit to run all tracks in canonical order. A leading `--mode` /
   `--mode=` is stripped.
-- **Path** — any token containing `/` or a file extension is treated as the scope to review
-  instead of the working diff.
+- **Scope** — pick one (precedence: PR URL > path > working changes):
+  - **PR URL / reference** — `https://github.com/<owner>/<repo>/pull/<n>`, `<owner>/<repo>#<n>`,
+    or a bare `#<n>`. The PR is fetched and checked out into a **throwaway git worktree**
+    (`.worktrees/pr-<n>`) so your current branch and working tree are untouched; the review runs
+    against the PR's diff vs. its merge base, and the worktree is removed afterward. Requires an
+    authenticated `gh`.
+  - **Path** — any token containing `/` or a file extension (and not a PR URL) is reviewed
+    directly instead of the working diff.
+  - none — the local working diff.
 - **`--fix`** — switches from report-only to applying the smallest correct change per finding
-  (see the output contract).
+  (see the output contract). With a **PR scope** it stays report-only by default (the worktree is
+  detached/throwaway); ask for PR review comments or a local branch if you want fixes applied.
 
 ## How it works
 
-`SKILL.md` is the orchestrator. It parses the request, establishes the scope (running
-`git status --short` + `git diff HEAD`, or reading the given path), loads
-`rubrics/output-format.md` plus the rubric for each selected mode, then runs the tracks in
-canonical order and emits a consolidated verdict.
+`SKILL.md` is the orchestrator. It parses the request, establishes the scope — a PR (fetched into
+an isolated `git worktree`, reviewed against its merge base, then cleaned up), a given path, or the
+local working diff (`git status --short` + `git diff HEAD`) — loads `rubrics/output-format.md` plus
+the rubric for each selected mode, then runs the tracks in canonical order and emits a consolidated
+verdict.

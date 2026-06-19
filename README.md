@@ -9,7 +9,7 @@ any resources it loads.
 
 | Skill | What it does |
 | --- | --- |
-| [`code-review`](skills/code-review/) | Structured multi-track code review (architecture, clean-code, naming, comments, readability, regression, regression-check) over your working diff or a path. Tuned for NestJS + Vue 3 + TypeScript. |
+| [`code-review`](skills/code-review/) | Structured multi-track code review (architecture, clean-code, naming, comments, readability, regression, regression-check) over your working diff, a path, or a pull request (checked out into an isolated git worktree). Tuned for NestJS + Vue 3 + TypeScript. |
 
 ## Install
 
