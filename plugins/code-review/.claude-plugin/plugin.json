@@ -1,0 +1,11 @@
+{
+  "name": "code-review",
+  "description": "Structured code review across eight tracks with a deterministic open-source analyzer layer (Semgrep, Gitleaks, Trivy, LSP find-references).",
+  "version": "0.3.0",
+  "author": {
+    "name": "Sergey Tkachenko",
+    "email": "bombascter@gmail.com"
+  },
+  "repository": "https://github.com/sergeytkachenko/llm-skills",
+  "license": "MIT"
+}
