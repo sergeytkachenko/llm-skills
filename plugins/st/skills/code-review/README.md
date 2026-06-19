@@ -43,8 +43,9 @@ Add the marketplace and install the plugin (inside Claude Code):
 /plugin install st@st
 ```
 
-It then invokes as `/st:code-review`. `git pull` in the cloned repo plus `/plugin marketplace update
-st` keeps it current. The deterministic analyzer layer needs **Docker + Compose v2 on Linux or
+It then invokes as `/st:code-review` (the repo also ships a `.claude/commands/st-code-review.md`
+wrapper, so `/st-code-review` works as a flat alias when this repo is your project). `git pull` in
+the cloned repo plus `/plugin marketplace update st` keeps it current. The deterministic analyzer layer needs **Docker + Compose v2 on Linux or
 macOS** (it runs the pinned toolchain in [`tools/compose.yml`](tools/compose.yml); a
 [`preflight`](tools/preflight.sh) check validates the OS, Docker install, and a running daemon
 first). Without a working Docker the skill still runs, minus that layer — never fabricating findings.
@@ -114,6 +115,22 @@ When the diff is large (more than ~15 files or ~800 changed lines — big enough
 `git diff` can blow past the tool output limit), the skill **fans out**: each track runs in its own
 parallel subagent that reads only the files it needs and returns just its findings, and the
 orchestrator assembles the consolidated verdict. Small diffs run inline.
+
+### Adversarial pass + triage
+
+The tracks review *with* context (the PR description, the author's intent) — which is necessary, but
+also lets a reviewer rationalize a bug ("the description says this is intentional"). To counter that,
+the skill runs one extra **Blind Hunter** pass: a subagent that sees **only the diff** — no
+description, no spec, no conversation — and judges the code purely on what's written, catching what a
+context-aware read explains away. On a large diff it runs as one more parallel subagent.
+
+All findings — from the tracks, the deterministic analyzers, and the Blind Hunter — then go through
+**triage**: dedupe across layers (the same issue at the same `path:line` is merged once, tagging its
+sources, e.g. `blind+regression`), then bucket each survivor into **decision-needed** (real, but the
+fix needs your intent), **patch** (real, unambiguous fix — what `--fix` applies), **defer** (real but
+pre-existing), or **dismiss** (noise — dropped, only counted). A finding carries both a bucket and a
+severity. And a skipped layer is never reported as clean: if a scanner or track didn't run, the
+verdict says **"review incomplete"** and names what was missing rather than implying it was checked.
 
 ### Stacks
 

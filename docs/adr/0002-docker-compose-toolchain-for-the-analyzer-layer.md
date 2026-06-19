@@ -33,8 +33,9 @@ Run the deterministic analyzers **only** through a Docker Compose file the skill
 - One service per analyzer (`semgrep`, `gitleaks`, `trivy`, `osv-scanner`), each pinned to a
   specific image tag. Bumping a tag is a deliberate, reviewable change.
 - Invocation is uniform: `REVIEW_DIR=<path> docker compose -f <compose> run --rm <service> <args>`.
-  The code under review mounts read-only at `/src`; reports land in `/src/.review/` and are removed
-  when the review finishes.
+  The code under review mounts read-only at `/src`; reports are written to a separate writable
+  mount `/out` (a host `mktemp -d` outside the reviewed tree), never into `/src`. See the
+  Implementation notes below for the exact mount layout.
 - **Compose is the only mechanism.** No host-PATH use, no `uvx`/`npx`/`docker run` fallback. If
   Docker/Compose is unavailable, the entire deterministic layer skips on the record and the tracks
   reason without tool corroboration.
@@ -55,3 +56,25 @@ Run the deterministic analyzers **only** through a Docker Compose file the skill
   chore.
 - **Follow-up:** if a no-Docker execution path becomes important, revisit with a separate fallback
   ADR rather than re-adding the ad-hoc ephemeral runners this decision removed.
+
+## Implementation notes
+
+These refine *how* the decision above is realized; they don't change it. They record details that
+settled during review, so the ADR matches the shipped `compose.yml` / `tool-registry.md` /
+`preflight.sh`:
+
+- **Mounts.** The code under review is mounted **read-only** at `/src`; reports are written to a
+  **separate writable** mount `/out` (a host `mktemp -d` outside the reviewed tree), never into
+  `/src`. This avoids both a read-only-filesystem write error and leaking a `.review/` dir into the
+  user's checkout.
+- **Linked worktrees.** For a PR reviewed in a `git worktree`, `/src/.git` is a pointer file and the
+  object store lives in the parent repo. Gitleaks gets the real store mounted at `/gitcommon`
+  (`git rev-parse --path-format=absolute --git-common-dir`) and reads it via `GIT_DIR=/gitcommon`.
+- **Preflight + scope.** A shipped `tools/preflight.sh` gates the layer to **Linux/macOS only** and
+  validates the Docker CLI, **Compose v2** (not legacy v1), and a **running, reachable daemon**
+  before any gather — each failure exits with a distinct code and an on-the-record skip reason.
+- **Skip granularity.** Two levels: a failed preflight skips the **whole** layer; after preflight, a
+  single service that can't pull/fetch/run is skipped **per-tool** so one blocked scanner neither
+  passes as "scanned clean" nor kills the others.
+- **Caching.** Each network-dependent service (Semgrep rule packs, Trivy/osv vuln DBs) has its own
+  named cache volume, so the first-run fetch is paid once; only Gitleaks is offline from the start.

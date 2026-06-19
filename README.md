@@ -30,9 +30,21 @@ Then, inside Claude Code:
 ```
 
 The skill is then invoked as `/st:code-review`. The `st` plugin name keeps it distinct from the
-official `code-review@claude-plugins-official` plugin, so both can be installed at once.
+official `code-review@claude-plugins-official` plugin, so both can be installed at once. After a
+`git pull`, run `/plugin marketplace update st` to pick up changes.
 
-See each plugin's own README for usage.
+### Requirements
+
+The skill itself needs nothing beyond Claude Code. Its **deterministic analyzer layer** (the
+`security` track, and the SAST/secret/dependency gather on an all-tracks run) additionally needs
+**Docker + Compose v2 on Linux or macOS** — it runs a pinned analyzer toolchain
+([`plugins/st/skills/code-review/tools/compose.yml`](plugins/st/skills/code-review/tools/compose.yml))
+behind a [`preflight`](plugins/st/skills/code-review/tools/preflight.sh) check that validates the OS,
+the Docker install, and a running daemon first. Without a working Docker the skill still runs — it
+just skips that layer on the record, never fabricating findings.
+
+See each plugin's own README for usage and the [`docs/adr/`](docs/adr/) records for the design
+decisions behind the analyzer layer.
 
 ## License
 

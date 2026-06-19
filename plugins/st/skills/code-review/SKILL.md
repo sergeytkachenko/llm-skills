@@ -1,7 +1,7 @@
 ---
 name: code-review
-description: Use this skill when the user asks to "code review", "/code-review", "review my changes", "review this diff/PR", "code review <path>", or "code review <pull-request-url>". Reviews the working diff, a given path, or a pull request (checked out into an isolated git worktree) across eight tracks — architecture, clean-code, naming, comments, readability, regression (static risk), security (taint/secrets/SCA backed by OSS analyzers), and regression-check (runs the test/lint/typecheck suite). Runs deterministic open-source analyzers (Semgrep, Gitleaks, Trivy, LSP find-references) and feeds their findings into the LLM to triage — catching what reading a diff misses. For a PR it also verifies the description's factual claims against reality (real test counts, cited ADRs/docs exist, "fixed X" is actually in the code) and follows paired/dependency PRs when a correctness contract spans repos. Fans out to parallel subagents for large diffs. Accepts mode(s) to scope which tracks run, an optional path, an optional PR URL, and `--fix` to apply minimal fixes. Checks are language-agnostic (examples lean toward NestJS + Vue 3 + TypeScript, but the rubrics apply to Java/Spring, Go, Python, Rust, .NET, etc.); the dynamic track detects the actual stack (Maven/Java, Gradle, Go, Python, .NET).
-version: 0.4.0
+description: Use this skill when the user asks to "code review", "/code-review", "review my changes", "review this diff/PR", "code review <path>", or "code review <pull-request-url>". Reviews the working diff, a given path, or a pull request (checked out into an isolated git worktree) across eight tracks — architecture, clean-code, naming, comments, readability, regression (static risk), security (taint/secrets/SCA backed by OSS analyzers), and regression-check (runs the test/lint/typecheck suite). Runs deterministic open-source analyzers (Semgrep, Gitleaks, Trivy, LSP find-references) and feeds their findings into the LLM to triage — catching what reading a diff misses. For a PR it also verifies the description's factual claims against reality (real test counts, cited ADRs/docs exist, "fixed X" is actually in the code) and follows paired/dependency PRs when a correctness contract spans repos. Adds a context-free adversarial pass (a "Blind Hunter" that sees only the diff, no PR description or intent, to catch what a context-aware read rationalizes away), then dedupes findings across the tracks/analyzers/blind layers and buckets each into decision-needed / patch / defer / dismiss. Resolves the review target by cascade (explicit arg → recent conversation → current git state → default working changes). Fans out to parallel subagents for large diffs. Accepts mode(s) to scope which tracks run, an optional path, an optional PR URL, and `--fix` to apply minimal fixes. Checks are language-agnostic (examples lean toward NestJS + Vue 3 + TypeScript, but the rubrics apply to Java/Spring, Go, Python, Rust, .NET, etc.); the dynamic track detects the actual stack (Maven/Java, Gradle, Go, Python, .NET).
+version: 0.5.0
 ---
 
 # Code review
@@ -21,9 +21,27 @@ Treat the text the user passed when invoking this skill as ARGS. Classify each t
 - Valid modes: `architecture`, `clean-code`, `naming`, `comments`, `readability`, `regression`,
   `security`, `regression-check`.
 - No modes given → run ALL of them, in the order listed above.
-- No scope given → SCOPE = the local working changes (step 2c).
 
-Pick exactly one scope. Precedence when more than one is present: PR URL > path > working changes.
+### Resolve the SCOPE by cascade — stop at the first tier that identifies it
+
+Pick exactly one scope. The conversation before this skill fired IS context, not a blank slate.
+Walk the tiers in order and **stop as soon as a tier identifies the target** — do not ask a question
+a tier above already answered, and do not keep probing once you have a scope.
+
+- **Tier 1 — explicit argument.** A token in ARGS names the scope:
+  - PR URL / `#<n>` / `<owner>/<repo>#<n>` → PR scope (step 2a). Takes precedence over everything.
+  - A token with `/` or a file extension (not a PR URL) → path scope (step 2b).
+  - Diff-mode keywords narrow a working-tree scope: "staged" → `git diff --cached`; "uncommitted" /
+    "working tree" / "all changes" → `git diff HEAD`; "vs <branch>" / "against <branch>" / "branch
+    diff" → diff against that base. Prefer the most specific match.
+- **Tier 2 — recent conversation.** If ARGS named no scope, do the last few messages reveal what to
+  review (a PR link, a branch, a path, a described change)? Apply the same keyword scan as Tier 1.
+- **Tier 3 — current git state.** If still unresolved and inside a repo: if HEAD is on a non-default
+  branch, confirm with the user ("review `<branch>`'s changes vs `main`?") before treating it as a
+  branch diff. Otherwise fall through.
+- **Tier 4 — default.** No scope anywhere → SCOPE = the local working changes (step 2c).
+
+Precedence when more than one explicit scope is present: PR URL > path > working changes.
 
 ## 2. Establish the scope under review
 
@@ -114,7 +132,10 @@ Read the given path and review it directly. That file/tree is the SCOPE.
 
 ### 2c. Local working changes (default)
 
-Gather the working changes yourself by running:
+Gather the working changes yourself. Always run `git status --short` for orientation, then run the
+diff command the cascade resolved in step 1 — `git diff HEAD` for the default/"uncommitted" case,
+`git diff --cached` when a "staged" keyword narrowed the scope, or `git diff <base>...HEAD` when a
+"vs <branch>" keyword named a base. With no narrowing keyword, default to:
 
 ```
 git status --short
@@ -142,8 +163,12 @@ paths relative to the skill directory.
 Run the selected track(s) in the canonical order (architecture, clean-code, naming, comments,
 readability, regression, security, regression-check). The `regression-check` track executes the
 project's test/lint/typecheck scripts, so a bare invocation with no modes (all tracks) will run the
-suite — pass explicit modes to skip it. If more than one track ran, end with a single consolidated
-verdict per the output contract.
+suite — pass explicit modes to skip it.
+
+The sub-steps run in this order: **gather** the deterministic findings once → run the selected
+**tracks** together with the **Blind Hunter** pass (inline they run one after another; on a large
+diff the Blind Hunter is just one more parallel subagent alongside the track agents) → **triage**
+(dedupe across layers + bucket) → emit the consolidated verdict per the output contract.
 
 ### Gather the deterministic findings once
 
@@ -170,7 +195,49 @@ track will consume, so a scoped run isn't forced to run scanners it won't use:
 - State which tools ran and which were skipped, so a clean verdict is never mistaken for "scanned
   and clean" when a scanner never executed (per `output-format.md`).
 
-If **no** gather-consuming track is selected (e.g. `/code-review naming`), skip this step entirely.
+If **no** gather-consuming track is selected (e.g. `/st:code-review naming`), skip this step entirely.
+
+### Blind Hunter — one adversarial pass with no context
+
+The tracks above review *with* context: the PR description, the author's stated intent, the
+surrounding code. That context is necessary, but it also lets you rationalize a bug ("the description
+says this is intentional", "the author clearly meant…"). To counter that bias, run **one** extra
+reviewer that sees **only the diff** — no PR description, no spec, no conversation, no project access
+beyond the diff text itself. Stripped of intent, it judges the code purely on what is written.
+
+- Spawn it as a separate subagent (the `Agent` tool, `Explore` or `general-purpose`). Hand it
+  **only** the SCOPE diff (from step 2) and this instruction; do **not** pass the PR description, the
+  comments from step 5, or any rubric. Its job: find correctness bugs, broken edge cases, unsafe
+  assumptions, and contradictions *visible in the diff alone* — report each as `path:line — title`
+  + why.
+- Run it for every review that has a diff (PR or working-tree scope). Skip it only for a pure
+  path-scope read with no diff, or a single-track style run (`/st:code-review naming`) where an
+  adversarial correctness pass adds nothing.
+- Its findings are **inputs to triage** (next section), not a separate report section — they get
+  deduped against the tracks and bucketed like any other finding, tagged `source: blind`.
+
+### Triage — dedupe across layers, then bucket
+
+You now have findings from the layers that actually ran — up to three sources: the selected tracks,
+the deterministic analyzers (gather), and the Blind Hunter. A scoped run may have only one (e.g.
+`/st:code-review naming` skips both gather and the Blind Hunter). Before presenting anything,
+consolidate whatever ran.
+
+1. **Deduplicate across sources.** When two findings describe the same issue at the same
+   `path:line`, merge into one: keep the most specific as the base (a tool-confirmed or
+   line-precise finding beats prose), fold any unique detail/reasoning from the others into it, and
+   tag the merged `source` (e.g. `blind+regression`, `security+Semgrep`). Never list the same issue
+   twice.
+2. **Bucket each surviving finding into exactly one** category — this is orthogonal to severity (a
+   finding still carries its Blocker/Major/Minor/Nit), and drives what happens next:
+   - **decision-needed** — a real issue whose correct fix is ambiguous without the user's intent
+     (a design trade-off, a spec gap). Cannot be auto-fixed; needs a human call.
+   - **patch** — a real issue with an unambiguous fix. Safe to apply under `--fix`.
+   - **defer** — real but pre-existing, not introduced by this change. Note it, don't act on it now.
+   - **dismiss** — noise, false positive, or already handled elsewhere. **Dropped** from the report;
+     keep only a count.
+3. Carry these buckets into the output per `rubrics/output-format.md` (which defines how they
+   surface and the clean-vs-incomplete rule).
 
 ### Large diffs — fan out instead of choking
 
@@ -188,6 +255,10 @@ tool) and run them in parallel:
   the gathered findings relevant to that track** (the `tool | path:line | rule | severity` list — and
   for `regression`/`architecture`, the LSP call-site list, since `LSP` is a session-bound built-in a
   subagent cannot re-run). The subagent triages what it's handed; it does not re-scan.
+- Spawn the **Blind Hunter** as one more parallel subagent (diff only, no context) alongside the
+  track agents — it costs nothing extra to run it concurrently and it matters most on large diffs.
+- The orchestrator does the cross-layer **dedupe + bucket** step itself after collecting every
+  subagent's findings — a subagent only sees its own layer and cannot dedupe against the others.
 - Tell each to read only the files its track needs — not to echo the diff back.
 - Each subagent returns **only its findings** in the per-track format, never file dumps. You collect
   them and emit the consolidated verdict.

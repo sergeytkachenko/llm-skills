@@ -2,7 +2,10 @@
 
 This file is the source of truth for the **open-source analyzers** the review runs to gather
 ground-truth findings before the LLM reasons. It is shared by the `security` track (which depends
-on it) and consulted by `regression`/`regression-check` for blast-radius and suite runs.
+on it) and consulted by `regression` and `architecture` for blast-radius (the gather stage loads it
+when `security`, `regression`, or `architecture` is selected, or on an all-tracks run). The
+`regression-check` track owns the native lint/test suite separately and does not gather through this
+registry.
 
 The model on a diff is blind to a specific set of facts: cross-file taint, who actually calls a
 changed symbol, whether a leaked key is live, and which transitive dependency carries a CVE. These

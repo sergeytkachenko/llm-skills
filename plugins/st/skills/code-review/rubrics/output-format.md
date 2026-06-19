@@ -51,6 +51,29 @@ note the overlap rather than repeating the block. Then a final **Overall verdict
     Overall: <n blockers, n majors> — <ready | not ready> to merge
     Top 3 to address first: 1) … 2) … 3) …
 
+## Triage buckets
+Every reported finding carries a **bucket** (set during the triage step in `SKILL.md`) in addition
+to its severity. The bucket says *what to do with it*; severity says *how bad it is*. Mark it inline,
+e.g. `path:line — title  [patch · Major]`.
+
+- **decision-needed** — real, but the right fix needs the user's intent. List these first; never
+  auto-fix them under `--fix`. Present the trade-off and let the user choose.
+- **patch** — real, with an unambiguous fix. These are what `--fix` applies.
+- **defer** — real but pre-existing (not introduced by this change). Report once, don't act on it.
+- **dismiss** — noise / false positive / handled elsewhere. **Not listed.** Report only the count
+  (e.g. "3 dismissed as noise") so the reader knows they were considered and dropped.
+
+End the consolidated run with one line of bucket counts:
+`<D> decision-needed, <P> patch, <W> defer, <R> dismissed`.
+
+## Clean vs incomplete — never conflate them
+A clean verdict means *the checks ran and found nothing*. If a layer did **not** run — a scanner was
+skipped (Docker down, service failed), a track's subagent failed or returned empty, or a tool was
+unavailable — you may not call the result "clean". Say **"review incomplete"** instead, name what
+didn't run, and present whatever the surviving layers found. A reader must never mistake "we couldn't
+look" for "we looked and it's fine." (This reinforces the per-track "which ran / which skipped" note
+above — apply it to the overall verdict too.)
+
 ## Tone
 Be direct and concrete. Point to the exact line. No praise padding, no restating the code back.
 Prefer "rename X to Y because…" over "consider possibly improving naming".
