@@ -44,8 +44,10 @@ Add the marketplace and install the plugin (inside Claude Code):
 ```
 
 It then invokes as `/st:code-review`. `git pull` in the cloned repo plus `/plugin marketplace update
-st` keeps it current. The deterministic analyzer layer needs Docker (it runs the pinned toolchain in
-[`tools/compose.yml`](tools/compose.yml)); without Docker the skill still runs, minus that layer.
+st` keeps it current. The deterministic analyzer layer needs **Docker + Compose v2 on Linux or
+macOS** (it runs the pinned toolchain in [`tools/compose.yml`](tools/compose.yml); a
+[`preflight`](tools/preflight.sh) check validates the OS, Docker install, and a running daemon
+first). Without a working Docker the skill still runs, minus that layer — never fabricating findings.
 
 ## Usage
 

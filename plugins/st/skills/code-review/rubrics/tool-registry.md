@@ -62,14 +62,48 @@ review ends; because it's a temp dir, an aborted review leaves nothing in the us
 skill); only fall back to a relative resolve. Do **not** hardcode a `~/.claude/plugins/cache/...`
 path — the version segment and plugin/marketplace names change.
 
-**Preflight + skip — per service, not all-or-nothing.** Before gather, once: `docker compose
-version` (Docker CLI present?) and `docker info` (daemon up?). If Docker/Compose is unavailable,
-skip the **whole** deterministic layer on the record. But Docker being present is *not* a guarantee
-each tool runs — so treat each service's failure independently:
+**Preflight — validate Docker is installed AND running before any gather.** Run the skill's own
+preflight script once; it performs the checks in order, stops at the first failure, and emits a
+single diagnostic line plus a distinct exit code:
 
-- A service whose image won't pull, whose first-run DB/rule fetch is blocked (no egress), or that
-  errors out → **skip that one tool on the record** (`<tool> scan skipped — <reason>`), and keep the
-  others. One blocked scanner must not silently pass as "scanned clean", and must not kill the rest.
+```
+REASON="$(sh "$(dirname "$COMPOSE")/preflight.sh" "$COMPOSE")"; PF=$?
+# PF=0 → layer available (REASON="ok").  PF≠0 → skip on the record with REASON:
+#   1 unsupported OS (only Linux and macOS — Windows is not supported)
+#   2 Docker CLI not installed
+#   3 Compose v2 missing (maybe only legacy docker-compose v1 present)
+#   4 daemon not running (installed but not started — the common case)
+#   5 daemon running but not accessible to this user (socket permissions)
+#   6 compose file not found (a skill-install problem, not a Docker one)
+```
+
+What it checks, and why each matters — a present CLI does **not** mean a running daemon, so the
+checks are ordered and independent:
+
+0. **Supported OS?** `uname -s` must be `Linux` or `Darwin`. The toolchain relies on a POSIX shell
+   and Unix bind-mount/socket semantics; Windows (outside a WSL/Linux shell, which reports as Linux)
+   is unsupported (exit 1).
+1. **Docker CLI installed?** `command -v docker`.
+2. **Compose v2 available?** `docker compose version` — the v2 subcommand, *not* the legacy
+   standalone `docker-compose` v1 binary (which this compose file's syntax may not run). Many hosts
+   have v1 on `PATH` but not v2; the script distinguishes them (exit 3 with a v1-specific message).
+3. **Daemon running and reachable?** `docker info` — the real "is it actually running" probe. Catches
+   the most common failure: Docker installed but Desktop/the daemon isn't started (exit 4), and the
+   socket-permission case (exit 5), with the right remediation in each message.
+4. **Compose file resolves?** `[ -f "$COMPOSE" ]` — a missing file is a skill-install problem
+   (exit 6), surfaced rather than silently swallowed.
+
+On any non-zero exit, **skip the whole deterministic layer on the record** using `REASON` verbatim —
+do not retry blindly, do not start the daemon, do not fall back to a host binary. Record the
+outcome once; don't re-run preflight per service.
+
+**Per-service skip — failures after preflight are per-tool, not all-or-nothing.** Preflight passing
+means Docker works, *not* that every tool will. Treat each service independently:
+
+- A service whose image won't pull (`manifest unknown`, registry unreachable), whose first-run DB/rule
+  fetch is blocked (no egress), or that exits non-zero → **skip that one tool on the record**
+  (`<tool> scan skipped — <reason>`), and keep the others. One blocked scanner must not silently pass
+  as "scanned clean", and must not kill the rest.
 - Give the first `compose run` of each service a longer timeout (~120s — first run pulls the image /
   warms its cache volume); later runs are fast. A timeout is a per-tool skip, not a layer failure.
 - Never fall back to a host binary, never fabricate results. The verdict states which services ran
