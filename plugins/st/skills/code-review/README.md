@@ -14,8 +14,10 @@ built-in **LSP** find-references (real call sites / blast radius) — then let t
 (drop false positives, dedupe, explain). The tools catch what reading a diff misses (cross-file
 taint, live secrets, CVE'd deps, who actually calls a changed function); the model makes them
 usable. The analyzers run as a **pinned Docker Compose toolchain the skill ships** (`tools/compose.yml`),
-so the gather stage is reproducible and versioned; if Docker isn't available the layer skips
-gracefully on the record, never fabricating results.
+so the gather stage is reproducible and versioned. If Docker isn't available the skill **falls back
+to host binaries** for whichever analyzers are installed (`semgrep`, `gitleaks`, `trivy`, or
+`uvx semgrep`) — a degraded-but-real ground-truth path, flagged non-pinned on the record — and only
+fully skips the layer when neither Docker nor any host tool is present. It never fabricates results.
 
 ## Tracks
 
@@ -45,10 +47,14 @@ Add the marketplace and install the plugin (inside Claude Code):
 
 It then invokes as `/st:code-review` (the repo also ships a `.claude/commands/st-code-review.md`
 wrapper, so `/st-code-review` works as a flat alias when this repo is your project). `git pull` in
-the cloned repo plus `/plugin marketplace update st` keeps it current. The deterministic analyzer layer needs **Docker + Compose v2 on Linux or
-macOS** (it runs the pinned toolchain in [`tools/compose.yml`](tools/compose.yml); a
-[`preflight`](tools/preflight.sh) check validates the OS, Docker install, and a running daemon
-first). Without a working Docker the skill still runs, minus that layer — never fabricating findings.
+the cloned repo plus `/plugin marketplace update st` keeps it current. The deterministic analyzer
+layer prefers **Docker + Compose v2 on Linux or macOS** (it runs the pinned toolchain in
+[`tools/compose.yml`](tools/compose.yml); a [`preflight`](tools/preflight.sh) check validates the OS,
+Docker install, and a running daemon first). Without a working Docker it **falls back to any host
+analyzers present** (`semgrep`/`gitleaks`/`trivy`, or `uvx semgrep`); with neither, the skill still
+runs minus that layer — never fabricating findings. The toolchain is self-checked by
+[`tools/verify.sh`](tools/verify.sh) (valid compose, pinned images, no in-tree report leak), run in
+CI on every change to `tools/`.
 
 ## Usage
 
@@ -154,9 +160,10 @@ tracks (so a scoped run doesn't run scanners it won't use):
    `architecture` gather blast-radius via the built-in LSP `findReferences` (the real call sites a
    signature change breaks) — that fires even without `security`. The analyzers run as a **pinned
    Docker Compose toolchain the skill ships** ([`tools/compose.yml`](tools/compose.yml)) — not from
-   the host PATH — so the gather stage is reproducible and versioned. If Docker/Compose isn't
-   available the whole deterministic layer **skips gracefully on the record**, never fabricating
-   results (LSP/Grep, being built-in session tools, still run).
+   the host PATH by default — so the gather stage is reproducible and versioned. If Docker/Compose
+   isn't available the layer **falls back to host binaries** for whichever analyzers are installed
+   (flagged non-pinned on the record), and only when none are present does it **skip gracefully on
+   the record** — never fabricating results (LSP/Grep, being built-in session tools, still run).
 2. **Triage**: the model takes those structured `path:line` findings *plus the diff*, drops false
    positives (OSS scanners are noisy), dedupes against what the tracks already raised, maps each
    survivor to the skill's severity, and explains why it matters here. Raw scanner output never lands

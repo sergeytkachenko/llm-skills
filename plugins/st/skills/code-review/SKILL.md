@@ -1,7 +1,7 @@
 ---
 name: code-review
-description: Use this skill when the user asks to "code review", "/code-review", "review my changes", "review this diff/PR", "code review <path>", or "code review <pull-request-url>". Reviews the working diff, a given path, or a pull request (checked out into an isolated git worktree) across eight tracks — architecture, clean-code, naming, comments, readability, regression (static risk), security (taint/secrets/SCA backed by OSS analyzers), and regression-check (runs the test/lint/typecheck suite). Runs deterministic open-source analyzers (Semgrep, Gitleaks, Trivy, LSP find-references) and feeds their findings into the LLM to triage — catching what reading a diff misses. For a PR it also verifies the description's factual claims against reality (real test counts, cited ADRs/docs exist, "fixed X" is actually in the code) and follows paired/dependency PRs when a correctness contract spans repos. Adds a context-free adversarial pass (a "Blind Hunter" that sees only the diff, no PR description or intent, to catch what a context-aware read rationalizes away), then dedupes findings across the tracks/analyzers/blind layers and buckets each into decision-needed / patch / defer / dismiss. Resolves the review target by cascade (explicit arg → recent conversation → current git state → default working changes). Fans out to parallel subagents for large diffs. Accepts mode(s) to scope which tracks run, an optional path, an optional PR URL, and `--fix` to apply minimal fixes. Checks are language-agnostic (examples lean toward NestJS + Vue 3 + TypeScript, but the rubrics apply to Java/Spring, Go, Python, Rust, .NET, etc.); the dynamic track detects the actual stack (Maven/Java, Gradle, Go, Python, .NET).
-version: 0.5.0
+description: Use this skill when the user asks to "code review", "/code-review", "review my changes", "review this diff/PR", "code review <path>", or "code review <pull-request-url>". Reviews the working diff, a path, or a PR (in an isolated git worktree) across eight tracks — architecture, clean-code, naming, comments, readability, regression, security, and regression-check (runs the test/lint/typecheck suite). Backs the LLM with deterministic OSS analyzers (Semgrep, Gitleaks, Trivy, LSP find-references) — via a pinned Docker toolchain, falling back to host binaries when Docker is absent — and triages their findings. For a PR it verifies the description's factual claims against the code and follows paired/cross-repo PRs. Adds a context-free "Blind Hunter" adversarial pass, then dedupes across layers and buckets each finding into decision-needed / patch / defer / dismiss. Resolves the target by cascade, fans out to parallel subagents for large diffs, and accepts mode(s), an optional path, an optional PR URL, and `--fix`. Language-agnostic (examples lean NestJS + Vue 3 + TS; the dynamic track detects the actual stack — Maven/Gradle/Go/Python/.NET).
+version: 0.6.0
 ---
 
 # Code review
@@ -174,10 +174,12 @@ diff the Blind Hunter is just one more parallel subagent alongside the track age
 
 Before reasoning, run the **gather** stage defined in `rubrics/tool-registry.md` — **once** for the
 whole review. The analyzers run as a **pinned Docker Compose toolchain the skill ships**
-(`tools/compose.yml`) — not from the host PATH; that file is the source of truth for *how* each tool
+(`tools/compose.yml`) by default; that file is the source of truth for *how* each tool
 runs (the `docker compose run` invocation, the writable `/out` mount, report parsing, per-service
-skip, cleanup), so don't restate the mechanics here. Preflight `docker compose version` once; if
-Docker is unavailable, skip the whole deterministic layer **on the record** — but if Docker is up
+skip, cleanup), so don't restate the mechanics here. Run the skill's `preflight.sh` once; if it
+returns non-zero (Docker unavailable), take the **host-binary fallback** the registry defines — run
+whatever tools the preflight's `fallback:` line reports present, directly from the host — and only
+fully skip the deterministic layer **on the record** when `fallback: none`. If Docker is up
 and one *service* fails (image pull, blocked fetch, timeout), skip just that tool on the record and
 keep the rest (the tracks still reason, just without that tool's corroboration). What this step
 decides is *which* tools to gather, driven by the **selected tracks** — gather only what a selected

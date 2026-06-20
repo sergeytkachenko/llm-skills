@@ -1,0 +1,23 @@
+name: verify code-review toolchain
+
+# Keeps the deterministic analyzer layer of the st:code-review skill internally
+# consistent: preflight.sh parses, compose.yml is valid, every image is pinned, the
+# OUTPUT_DIR guard holds, and no report can leak into the reviewed tree. Runs without
+# pulling any scanner image, so it's fast and hermetic.
+
+on:
+  push:
+    paths:
+      - "plugins/st/skills/code-review/tools/**"
+  pull_request:
+    paths:
+      - "plugins/st/skills/code-review/tools/**"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify analyzer toolchain
+        run: sh plugins/st/skills/code-review/tools/verify.sh

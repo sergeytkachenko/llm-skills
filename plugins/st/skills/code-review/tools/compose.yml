@@ -1,8 +1,11 @@
 # Deterministic analyzer toolchain for the code-review skill.
 #
-# The skill brings its OWN tools — every analyzer runs as a pinned container here,
-# never from the host PATH. This makes the gather stage reproducible and versioned:
-# the same image tags produce the same findings on any machine with Docker.
+# The skill brings its OWN tools — by default every analyzer runs as a pinned
+# container here, not from the host PATH. This makes the gather stage reproducible
+# and versioned: the same image tags produce the same findings on any machine with
+# Docker. When Docker is unavailable the skill degrades to a host-binary fallback
+# (see rubrics/tool-registry.md "Host-binary fallback"); this file is the preferred
+# path, not the only one.
 #
 # Mounts (see rubrics/tool-registry.md for the full invocation):
 #   - REVIEW_DIR  → /src  read-only   (the code under review; never written to)
@@ -21,6 +24,14 @@
 # YAML anchor, so they're written out per service): REVIEW_DIR→/src read-only (code
 # under review, never written), OUTPUT_DIR→/out writable (reports land here). Tools
 # that warm a DB/cache add their own named cache volume.
+#
+# OUTPUT_DIR has NO in-tree default on purpose. The skill always exports it to a
+# `mktemp -d` OUTSIDE the reviewed tree (see rubrics/tool-registry.md). If it is
+# somehow unset, the `:?` guard makes Compose fail loudly rather than silently
+# bind-mounting a `./.review` dir into the user's read-only checkout / PR worktree —
+# the one place a report must never land. REVIEW_DIR and GIT_COMMON_DIR keep their
+# `.`/`.git` defaults: those only ever resolve to the current repo, so a missing
+# value is harmless there.
 
 services:
   semgrep:
@@ -28,7 +39,7 @@ services:
     working_dir: /src
     volumes:
       - "${REVIEW_DIR:-.}:/src:ro"
-      - "${OUTPUT_DIR:-./.review}:/out"
+      - "${OUTPUT_DIR:?set by the skill to a mktemp -d outside the reviewed tree}:/out"
       - "semgrep-cache:/root/.semgrep"   # rule packs cached across runs
     network_mode: bridge                 # registry rule packs fetch on first run
 
@@ -41,7 +52,7 @@ services:
     # re-mount. See tool-registry.md "Secrets" for the exact invocation.
     volumes:
       - "${REVIEW_DIR:-.}:/src:ro"
-      - "${OUTPUT_DIR:-./.review}:/out"
+      - "${OUTPUT_DIR:?set by the skill to a mktemp -d outside the reviewed tree}:/out"
       - "${GIT_COMMON_DIR:-./.git}:/gitcommon:ro"
     network_mode: none                   # fully offline; regex + entropy only
 
@@ -50,7 +61,7 @@ services:
     working_dir: /src
     volumes:
       - "${REVIEW_DIR:-.}:/src:ro"
-      - "${OUTPUT_DIR:-./.review}:/out"
+      - "${OUTPUT_DIR:?set by the skill to a mktemp -d outside the reviewed tree}:/out"
       - "trivy-cache:/root/.cache/trivy"
     network_mode: bridge                 # vuln DB pulls on first run; cached in volume
 
@@ -59,7 +70,7 @@ services:
     working_dir: /src
     volumes:
       - "${REVIEW_DIR:-.}:/src:ro"
-      - "${OUTPUT_DIR:-./.review}:/out"
+      - "${OUTPUT_DIR:?set by the skill to a mktemp -d outside the reviewed tree}:/out"
       - "osv-cache:/root/.cache/osv-scanner"
     network_mode: bridge                 # offline DB download on first run; cached in volume
 

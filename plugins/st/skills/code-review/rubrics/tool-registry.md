@@ -31,11 +31,14 @@ the box.
 
 ## Running the tools — Docker Compose only
 
-The skill brings its **own** pinned toolchain. Every analyzer runs as a container defined in
-[`../tools/compose.yml`](../tools/compose.yml) — **never** from the host PATH, `uvx`, or `npx`.
-This makes the gather stage reproducible and versioned: the same image tags yield the same findings
-on any machine with Docker. There is exactly one invocation mechanism — no host-install path, no
-ephemeral fallback to maintain.
+The skill brings its **own** pinned toolchain. The **preferred and default** path runs every
+analyzer as a container defined in [`../tools/compose.yml`](../tools/compose.yml) — **not** from the
+host PATH. This makes the gather stage reproducible and versioned: the same image tags yield the same
+findings on any machine with Docker. Use this path whenever preflight returns `ok`.
+
+The host PATH / `uvx` launchers are reserved for the **host-binary fallback** (see below) — used
+*only* when preflight reports Docker unavailable. They trade version-pinning for availability, so
+they're a documented degraded mode, never the default while Docker works.
 
 **Invocation.** The code under review mounts read-only at `/src`; reports go to a **separate
 writable** mount `/out` (never into `/src` — `/src` is read-only by design). Set the three env vars,
@@ -96,9 +99,36 @@ checks are ordered and independent:
 4. **Compose file resolves?** `[ -f "$COMPOSE" ]` — a missing file is a skill-install problem
    (exit 6), surfaced rather than silently swallowed.
 
-On any non-zero exit, **skip the whole deterministic layer on the record** using `REASON` verbatim —
-do not retry blindly, do not start the daemon, do not fall back to a host binary. Record the
-outcome once; don't re-run preflight per service.
+On any non-zero exit, **do not retry blindly and do not start the daemon.** Instead read the
+preflight's second stdout line, `fallback: <tools>`, and take the **host-binary fallback** below —
+only `fallback: none` means the layer is fully skipped. Record the outcome once (Docker path vs
+host-fallback path vs fully skipped); don't re-run preflight per service.
+
+### Host-binary fallback — when Docker is unavailable
+
+The pinned Docker toolchain is the *preferred* path (reproducible, versioned), but a missing or
+stopped Docker must not silently erase the entire deterministic layer — that's exactly the CI / locked-down
+environment where ground-truth scanning matters most. When preflight exits non-zero with a
+non-empty `fallback:` line, run each **named** tool directly from the host instead of through Compose:
+
+- Run only the tools preflight reported present (`fallback: semgrep gitleaks` → run those two; the
+  rest skip on the record). `semgrep(uvx)` means run Semgrep via `uvx semgrep …` (ephemeral, no
+  install); a bare name means the binary is on `PATH`.
+- Use the **same arguments, scoping, and report paths** as the Compose services below — only the
+  launcher changes. Host equivalents (write reports to `$OUTPUT_DIR`, the same `mktemp -d`):
+  - `semgrep scan --config p/security-audit --metrics=off --sarif --output "$OUTPUT_DIR/semgrep.sarif" <changed-paths>`
+    (or `uvx semgrep scan …` when `fallback:` said `semgrep(uvx)`).
+  - `gitleaks git "$REVIEW_DIR" --log-opts="<merge-base>..HEAD" --report-format json --report-path "$OUTPUT_DIR/gitleaks.json"`
+    — no `GIT_DIR` remount needed on the host (the object store is reachable directly).
+  - `trivy fs --scanners vuln,license --format json --quiet --output "$OUTPUT_DIR/trivy.json" "$REVIEW_DIR"`
+    (gated on a manifest change, as below).
+- This is **not** a license to invent: a tool that is neither containerised nor on the host still
+  skips on the record. The fallback only uses what preflight actually found.
+- **Record which path ran.** The verdict must say *Docker toolchain*, *host-binary fallback (semgrep,
+  gitleaks)*, or *deterministic layer skipped — no Docker and no host tools*, so a reader knows the
+  provenance and reproducibility of the findings. A host-binary run is real ground truth but **not**
+  version-pinned — note that, since a newer local Semgrep can yield different findings than the pinned
+  image. LSP/Grep are built-in session tools and run regardless of this whole branch.
 
 **Per-service skip — failures after preflight are per-tool, not all-or-nothing.** Preflight passing
 means Docker works, *not* that every tool will. Treat each service independently:
@@ -109,8 +139,10 @@ means Docker works, *not* that every tool will. Treat each service independently
   as "scanned clean", and must not kill the rest.
 - Give the first `compose run` of each service a longer timeout (~120s — first run pulls the image /
   warms its cache volume); later runs are fast. A timeout is a per-tool skip, not a layer failure.
-- Never fall back to a host binary, never fabricate results. The verdict states which services ran
-  and which were skipped (per `output-format.md`).
+- Never fabricate results. A per-service failure *inside* the Docker path skips just that tool on the
+  record — it does **not** trigger the whole-layer host fallback (that's only for Docker being
+  unavailable, decided by preflight). The verdict states which services ran and which were skipped
+  (per `output-format.md`).
 
 **Parallelism — opt in explicitly.** Separate `compose run` containers *can* run at once, but each
 call blocks, so the gather step must launch the independent services concurrently (background the
