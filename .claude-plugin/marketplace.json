@@ -5,11 +5,5 @@
     "email": "bombascter@gmail.com"
   },
   "description": "Sergey Tkachenko's personal Claude Code skills",
-  "plugins": [
-    {
-      "name": "st",
-      "source": "./plugins/st",
-      "description": "Structured code review across eight tracks (architecture, clean-code, naming, comments, readability, regression, security, regression-check) with a deterministic open-source analyzer layer (Semgrep, Gitleaks, Trivy, LSP)."
-    }
-  ]
+  "plugins": []
 }
